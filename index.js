@@ -31,4 +31,10 @@ app.post('/api/proxy', async (req, res) => {
     }
 });
 
+// КРИТИЧЕСКИЙ ДЛЯ RENDER БЛОК: Запуск прослушивания порта
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+    console.log(`Proxy server is running on port ${PORT}`);
+});
+
 module.exports = app;
