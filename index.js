@@ -9,7 +9,7 @@ const TG_BOT_TOKEN = "8223527991:AAG3wD26rOih0CRAtFW9_r7yhls_Ws42Goo";
 const TG_CHAT_ID = "@sopelev_sergei";
 
 const VK_ACCESS_TOKEN = "vk1.a.7qpgIH5rmzSmRqi75L0rvHzLGHQB_-7mS9l2ajQ9v4waNrvg9X69xgNi5VhqZN74mNOqpcxJau8FPy42EvUGpSf-Qu_EyXPxbzzV7dbOzUVj29yEXDgFA4VkBo-bHdwmydZcl69K1rroDMgfQy6orxjSJIblyO7cI9JhgltszPzhEAIpxCf5CamKkQCUATi7X1_K0sPy0PDgSQ50w6HLnA";
-const VK_OWNER_ID = "206615815";
+const VK_OWNER_ID = "-206615815";
 
 const MAX_TOKEN = "f9LHodD0cOLjc6PWXm9X8_o89x3yepPLNK3WxQji9sO5K918rsPNifU9oNBmT0-oKjshxHH6tGSqgvFfUkbH";
 const MAX_CHANNEL_ID = "-72415543328123";
