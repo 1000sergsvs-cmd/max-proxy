@@ -15,7 +15,7 @@ const MAX_TOKEN = "f9LHodD0cOLjc6PWXm9X8_o89x3yepPLNK3WxQji9sO5K918rsPNifU9oNBmT
 const MAX_CHANNEL_ID = "-72415543328123";
 
 // Ссылка на твою Google Таблицу, переведенная в формат веб-скрипта для планировщика
-const GOOGLE_SCRIPT_GET_POSTS_URL = "СЮДА_МЫ_ВСТАВИМ_ССЫЛКУ_ИЗ_ШАГА_3";
+const GOOGLE_SCRIPT_GET_POSTS_URL = "https://script.google.com/macros/s/AKfycbytfoFYqjZQ2pRMWQ4fUeENS2ErnpL_5O8zKPeLVqAnxg4Xo1e-umzhRXJMp1h2bcvX/exec";
 // =====================================================
 
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
