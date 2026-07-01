@@ -1,6 +1,7 @@
 const axios = require('axios');
 
-const GOOGLE_SCRIPT_GET_POSTS_URL = "https://script.google.com/macros/s/AKfycbytfoFYqjZQ2pRMWQ4fUeENS2ErnpL_5O8zKPeLVqAnxg4Xo1e-umzhRXJMp1h2bcvX/exec";
+// ВСТАВЬ СЮДА ТОЧНЫЙ URL ИЗ APPS SCRIPT, КОТОРЫЙ ТЫ СКОПИРОВАЛ
+const GOOGLE_SCRIPT_GET_POSTS_URL = "https://script.google.com/macros/s/AKfcybytdfOFm_N8k87NnN_vNz3q9Y-nO6yK6B_N4_R7Q_v7A/exec";
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
@@ -12,7 +13,14 @@ const MAX_CHAT_ID = process.env.MAX_CHAT_ID;
 async function checkAndPublish() {
   try {
     console.log("Проверяем наличие отложенных постов в Google Таблице...");
-    const response = await axios.get(GOOGLE_SCRIPT_GET_POSTS_URL);
+    
+    // Делаем запрос к таблице безопасным
+    const response = await axios.get(GOOGLE_SCRIPT_GET_POSTS_URL).catch(err => {
+      console.log("Ошибка запроса к Google Таблице:", err.message);
+      return null;
+    });
+
+    if (!response || !response.data) return;
     const data = response.data;
 
     if (!data || !data.hasPost) {
@@ -62,7 +70,7 @@ async function checkAndPublish() {
             v: "5.131"
           }
         });
-        if (vkResponse.data.error) {
+        if (vkResponse.data && vkResponse.data.error) {
           console.log("VK API вернул ошибку:", vkResponse.data.error.error_msg);
         } else {
           console.log("Успешно отправлено в VK!");
@@ -88,17 +96,17 @@ async function checkAndPublish() {
     }
 
     // Сбрасываем статус в таблице
-    await axios.post(GOOGLE_SCRIPT_GET_POSTS_URL, { id: data.id, status: "success" });
+    await axios.post(GOOGLE_SCRIPT_GET_POSTS_URL, { id: data.id, status: "success" }).catch(() => {});
     console.log("Обработка строки завершена.");
 
   } catch (error) {
-    console.log("Ошибка внутри checkAndPublish:", error.message);
+    console.log("Общая ошибка в checkAndPublish:", error.message);
   }
 }
 
 // Запуск раз в минуту
 setInterval(checkAndPublish, 60000);
 
-// Стартовый запуск скрипта
+// Стартовый запуск
 console.log("Прокси-сервер успешно запущен...");
 checkAndPublish();
