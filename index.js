@@ -1,7 +1,7 @@
 const axios = require('axios');
 const http = require('http'); // Встроенный модуль, с ним деплой не упадет
 
-const GOOGLE_SCRIPT_GET_POSTS_URL = "https://script.google.com/macros/s/AKfcybytdfOFm_N8k87NnN_vNz3q9Y-nO6yK6B_N4_R7Q_v7A/exec?check=1";
+const GOOGLE_SCRIPT_GET_POSTS_URL = "https://script.google.com/macros/s/AKfycbytfoFYqjZQ2pRMWQ4fUeENS2ErnpL_5O8zKPeLVqAnxg4Xo1e-umzhRXJMp1h2bcvX/exec?check=1";
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
