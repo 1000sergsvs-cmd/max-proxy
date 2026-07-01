@@ -1,9 +1,8 @@
 const axios = require('axios');
-const FormData = require('form-data');
+const express = require('express');
 
-const GOOGLE_SCRIPT_GET_POSTS_URL = "https://script.google.com/macros/s/AKfcybytdfOFm_N8k87NnN_vNz3q9Y-nO6yK6B_N4_R7Q_v7A/exec"; // Твой URL из скрипта таблицы
+const GOOGLE_SCRIPT_GET_POSTS_URL = "https://script.google.com/macros/s/AKfcybytdfOFm_N8k87NnN_vNz3q9Y-nO6yK6B_N4_R7Q_v7A/exec";
 
-// Токены и ID из настроек (Render подтянет их из Environment Variables)
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 const VK_ACCESS_TOKEN = process.env.VK_ACCESS_TOKEN;
@@ -22,93 +21,91 @@ async function checkAndPublish() {
       return;
     }
 
-    console.log(`Обнаружен пост для публикации: "${data.text ? data.text.substring(0, 30) : 'Без текста'}..."`);
+    const postText = data.text || "";
+    const imageUrl = data.imageUrl || "";
+    // Проверяем соцсети напрямую из строки или объекта, приведенного к строке
+    const channelsString = JSON.stringify(data.channels || data).toLowerCase();
 
-    // 1. ОТПРАВКА В TELEGRAM
-    if (data.channels && data.channels.telegram) {
+    console.log(`Обнаржен пост: "${postText.substring(0, 30)}..."`);
+
+    // 1. TELEGRAM
+    if (channelsString.includes("telegram")) {
       try {
-        console.log("Отправка в Telegram запущена...");
-        if (data.imageUrl) {
+        console.log("Отправка в Telegram...");
+        if (imageUrl) {
           await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`, {
             chat_id: TELEGRAM_CHAT_ID,
-            photo: data.imageUrl,
-            caption: data.text
+            photo: imageUrl,
+            caption: postText
           });
         } else {
           await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
             chat_id: TELEGRAM_CHAT_ID,
-            text: data.text
+            text: postText
           });
         }
         console.log("Успешно отправлено в Telegram!");
       } catch (tgError) {
-        console.error("Ошибка отправки в Telegram:", tgError.response ? tgError.response.data : tgError.message);
+        console.log("Ошибка в Telegram:", tgError.message);
       }
     }
 
-    // 2. ОТПРАВКА В ВКОНТАКТЕ
-    if (data.channels && data.channels.vkontakte) {
+    // 2. ВКОНТАКТЕ
+    if (channelsString.includes("vkontakte")) {
       try {
-        console.log("Отправка в VK запущена...");
-        // Публикация на стену (с картинкой, если есть)
-        let attachments = "";
-        if (data.imageUrl) {
-          // Для простоты передаем картинку как ссылку, если у тебя настроен импорт ссылок в ВК, 
-          // либо отправляем чистый текст. Попробуем прямую публикацию текста + ссылка на фото
-          attachments = data.imageUrl;
-        }
-
+        console.log("Отправка в VK...");
         const vkResponse = await axios.get(`https://api.vk.com/method/wall.post`, {
           params: {
-            owner_id: `-${VK_OWNER_ID}`.replace('--', '-'), // Защита от двойного минуса
+            owner_id: `-${VK_OWNER_ID}`.replace('--', '-'),
             from_group: 1,
-            message: data.text,
-            attachments: attachments,
+            message: postText,
+            attachments: imageUrl,
             access_token: VK_ACCESS_TOKEN,
             v: "5.131"
           }
         });
-
         if (vkResponse.data.error) {
-          console.error("VK API вернул ошибку:", vkResponse.data.error);
+          console.log("VK API вернул ошибку:", vkResponse.data.error.error_msg);
         } else {
-          console.log("Успешно отправлено в VK! ID поста:", vkResponse.data.response.post_id);
+          console.log("Успешно отправлено в VK!");
         }
       } catch (vkError) {
-        console.error("Системная ошибка при отправке в VK:", vkError.message);
+        console.log("Ошибка в VK:", vkError.message);
       }
     }
 
-    // 3. ОТПРАВКА В МЕССЕНДЖЕР МАКС
-    if (data.channels && data.channels.max) {
+    // 3. МЕССРНДЖЕР МАКС
+    if (channelsString.includes("max")) {
       try {
-        console.log("Отправка в мессенджер МАКС запущена...");
-        // Отправляем запрос в Bot API Макса
+        console.log("Отправка в мессенджер МАКС...");
         await axios.post(`https://api.max.ru/bot${MAX_BOT_TOKEN}/sendMessage`, {
           chat_id: MAX_CHAT_ID,
-          text: data.text,
-          photo: data.imageUrl // Если API поддерживает отправку фото в этом же запросе
+          text: postText,
+          photo: imageUrl
         });
-        console.log("Успешно отправлено в мессенджер МАКС!");
+        console.log("Успешно отправлено в МАКС!");
       } catch (maxError) {
-        console.error("Ошибка отправки в МАКС:", maxError.response ? maxError.response.data : maxError.message);
+        console.log("Ошибка в МАКС:", maxError.message);
       }
     }
 
-    // Оповещаем таблицу, что обработка завершена
+    // Сбрасываем статус в таблице
     await axios.post(GOOGLE_SCRIPT_GET_POSTS_URL, { id: data.id, status: "success" });
-    console.log("Обработка поста успешно завершена.");
+    console.log("Обработка строки завершена.");
 
   } catch (error) {
-    console.error("Глобальная ошибка в процессе проверки:", error.message);
+    console.log("Ошибка внутри checkAndPublish:", error.message);
   }
 }
 
-// Запуск проверки каждые 60 секунд
+// Запуск раз в минуту
 setInterval(checkAndPublish, 60000);
 
-// Поддержка порта для Render
-const express = require('express');
+// Запуск веб-сервера для Render
 const app = express();
-app.get('/', (req, res) => res.send('Proxy is running...'));
-app.listen(process.env.PORT || 10000, () => console.log(`Сервер слушает порт ${process.env.PORT || 10000}`));
+app.get('/', (req, res) => res.send('Proxy is online'));
+app.listen(process.env.PORT || 10000, () => {
+  console.log("Сервер успешно запущен и слушает порт 10000");
+  // Сразу делаем одну проверку при старте, чтобы не ждать минуту
+  checkAndPublish();
+});
