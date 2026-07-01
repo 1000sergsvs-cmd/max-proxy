@@ -1,5 +1,4 @@
 const axios = require('axios');
-const express = require('express');
 
 const GOOGLE_SCRIPT_GET_POSTS_URL = "https://script.google.com/macros/s/AKfcybytdfOFm_N8k87NnN_vNz3q9Y-nO6yK6B_N4_R7Q_v7A/exec";
 
@@ -23,10 +22,9 @@ async function checkAndPublish() {
 
     const postText = data.text || "";
     const imageUrl = data.imageUrl || "";
-    // Проверяем соцсети напрямую из строки или объекта, приведенного к строке
     const channelsString = JSON.stringify(data.channels || data).toLowerCase();
 
-    console.log(`Обнаржен пост: "${postText.substring(0, 30)}..."`);
+    console.log(`Обнаружен пост: "${postText.substring(0, 30)}..."`);
 
     // 1. TELEGRAM
     if (channelsString.includes("telegram")) {
@@ -74,7 +72,7 @@ async function checkAndPublish() {
       }
     }
 
-    // 3. МЕССРНДЖЕР МАКС
+    // 3. МЕССЕНДЖЕР МАКС
     if (channelsString.includes("max")) {
       try {
         console.log("Отправка в мессенджер МАКС...");
@@ -101,11 +99,6 @@ async function checkAndPublish() {
 // Запуск раз в минуту
 setInterval(checkAndPublish, 60000);
 
-// Запуск веб-сервера для Render
-const app = express();
-app.get('/', (req, res) => res.send('Proxy is online'));
-app.listen(process.env.PORT || 10000, () => {
-  console.log("Сервер успешно запущен и слушает порт 10000");
-  // Сразу делаем одну проверку при старте, чтобы не ждать минуту
-  checkAndPublish();
-});
+// Стартовый запуск скрипта
+console.log("Прокси-сервер успешно запущен...");
+checkAndPublish();
