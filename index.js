@@ -1,6 +1,6 @@
 const axios = require('axios');
+const http = require('http'); // Встроенный модуль, с ним деплой не упадет
 
-// ВСТАВЬ СЮДА ТОЧНЫЙ URL ИЗ APPS SCRIPT, КОТОРЫЙ ТЫ СКОПИРОВАЛ
 const GOOGLE_SCRIPT_GET_POSTS_URL = "https://script.google.com/macros/s/AKfcybytdfOFm_N8k87NnN_vNz3q9Y-nO6yK6B_N4_R7Q_v7A/exec";
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
@@ -14,7 +14,6 @@ async function checkAndPublish() {
   try {
     console.log("Проверяем наличие отложенных постов в Google Таблице...");
     
-    // Делаем запрос к таблице безопасным
     const response = await axios.get(GOOGLE_SCRIPT_GET_POSTS_URL).catch(err => {
       console.log("Ошибка запроса к Google Таблице:", err.message);
       return null;
@@ -107,6 +106,15 @@ async function checkAndPublish() {
 // Запуск раз в минуту
 setInterval(checkAndPublish, 60000);
 
-// Стартовый запуск
-console.log("Прокси-сервер успешно запущен...");
-checkAndPublish();
+// Создаем простейший сервер для заглушки порта Render
+const server = http.createServer((req, res) => {
+  res.writeHead(200, { 'Content-Type': 'text/plain' });
+  res.end('Proxy Server is running');
+});
+
+const PORT = process.env.PORT || 10000;
+server.listen(PORT, () => {
+  console.log(`Прокси-сервер успешно запущен на порту ${PORT}...`);
+  // Сразу делаем проверку при старте
+  checkAndPublish();
+});
