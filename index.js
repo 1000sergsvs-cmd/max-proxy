@@ -1,7 +1,12 @@
 const http = require('http');
+const https = require('https');
 const axios = require('axios');
 
-// Тот самый надежный прокси-обработчик на базе axios
+// Создаем агента, который игнорирует ошибки SSL-сертификатов
+const httpsAgent = new https.Agent({  
+  rejectUnauthorized: false
+});
+
 async function handleProxy(req, res) {
   let bodyChunks = [];
   
@@ -20,19 +25,18 @@ async function handleProxy(req, res) {
 
       console.log(`[Proxy] Направление запроса на: ${targetUrl}`);
 
-      // Axios берет на себя всю работу с multipart и заголовками
       const response = await axios({
         method: method || 'POST',
         url: targetUrl,
         headers: headers || {},
         data: body || null,
         timeout: 30000,
-        validateStatus: () => true // Пропускаем любые ответы МАКСа, не падая
+        httpsAgent: httpsAgent, // ИСПОЛЬЗУЕМ АГЕНТА ДЛЯ ОБХОДА SSL ОШИБКИ
+        validateStatus: () => true 
       });
 
       res.writeHead(response.status, response.headers);
       
-      // Отправляем ответ обратно в Google Таблицу
       if (typeof response.data === 'object') {
         res.end(JSON.stringify(response.data));
       } else {
@@ -48,13 +52,11 @@ async function handleProxy(req, res) {
 }
 
 const server = http.createServer((req, res) => {
-  // Проверка связи
   if (req.url === '/' && req.method === 'GET') {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
     return res.end('Pult Postov Is Live and Proxy is Ready!');
   }
 
-  // Маршрут прокси
   if (req.url === '/api/proxy' && req.method === 'POST') {
     return handleProxy(req, res);
   }
