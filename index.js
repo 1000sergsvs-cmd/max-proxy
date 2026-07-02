@@ -1,5 +1,6 @@
 const axios = require('axios');
 const http = require('http');
+const FormData = require('form-data'); // Обычно предустановлен, либо axios соберет сам
 
 const GOOGLE_SCRIPT_GET_POSTS_URL = "https://script.google.com/macros/s/AKfycbytfoFYqjZQ2pRMWQ4fUeENS2ErnpL_5O8zKPeLVqAnxg4Xo1e-umzhRXJMp1h2bcvX/exec?check=1";
 
@@ -9,6 +10,13 @@ const VK_ACCESS_TOKEN = process.env.VK_ACCESS_TOKEN;
 const VK_OWNER_ID = process.env.VK_OWNER_ID;
 const MAX_BOT_TOKEN = process.env.MAX_BOT_TOKEN;
 const MAX_CHAT_ID = process.env.MAX_CHAT_ID;
+
+// Помощник для превращения Base64 строки из таблицы в бинарный буфер файла
+function base64ToBuffer(base64String) {
+  if (!base64String || !base64String.includes('base64,')) return null;
+  const base64Data = base64String.split('base64,')[1];
+  return Buffer.from(base64Data, 'base64');
+}
 
 async function checkAndPublish() {
   try {
@@ -28,20 +36,25 @@ async function checkAndPublish() {
     }
 
     const postText = data.text || "";
-    const imageUrl = data.image || data.imageUrl || ""; 
+    const rawImage = data.image || data.imageUrl || ""; 
     const channelsString = JSON.stringify(data.channels || data).toLowerCase();
 
     console.log(`Обнаружен пост: "${postText.substring(0, 30)}..."`);
 
-    // 1. TELEGRAM (Изолированный блок)
+    const imageBuffer = base64ToBuffer(rawImage);
+
+    // 1. TELEGRAM
     if (channelsString.includes("telegram")) {
       try {
         console.log("Отправка в Telegram...");
-        if (imageUrl) {
-          await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`, {
-            chat_id: TELEGRAM_CHAT_ID,
-            photo: imageUrl,
-            caption: postText
+        if (imageBuffer) {
+          const form = new FormData();
+          form.append('chat_id', TELEGRAM_CHAT_ID);
+          form.append('caption', postText);
+          form.append('photo', imageBuffer, { filename: 'image.jpg' });
+
+          await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`, form, {
+            headers: form.getHeaders()
           });
         } else {
           await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
@@ -51,50 +64,92 @@ async function checkAndPublish() {
         }
         console.log("Успешно отправлено в Telegram!");
       } catch (tgError) {
-        console.log("Ошибка в Telegram (продолжаем работу):", tgError.message);
+        console.log("Ошибка в Telegram (продолжаем работу):", tgError.response ? JSON.stringify(tgError.response.data) : tgError.message);
       }
     }
 
-    // 2. ВКОНТАКТЕ (Изолированный блок)
+    // 2. ВКОНТАКТЕ
     if (channelsString.includes("vkontakte")) {
       try {
         console.log("Отправка в VK...");
-        const vkResponse = await axios.get(`https://api.vk.com/method/wall.post`, {
-          params: {
-            owner_id: `-${VK_OWNER_ID}`.replace('--', '-'),
-            from_group: 1,
-            message: postText,
-            attachments: imageUrl,
-            access_token: VK_ACCESS_TOKEN,
-            v: "5.131"
+        if (imageBuffer) {
+          // Шаг 2.1: Получаем сервер для загрузки фото на стену группы
+          const serverUrlRes = await axios.get(`https://api.vk.com/method/photos.getWallUploadServer`, {
+            params: { group_id: VK_OWNER_ID, access_token: VK_ACCESS_TOKEN, v: "5.131" }
+          });
+          
+          const uploadServerUrl = serverUrlRes.data?.response?.upload_url;
+          
+          if (uploadServerUrl) {
+            // Шаг 2.2: Загружаем буфер картинки на этот сервер
+            const form = new FormData();
+            form.append('photo', imageBuffer, { filename: 'image.jpg' });
+            
+            const uploadRes = await axios.post(uploadServerUrl, form, { headers: form.getHeaders() });
+            
+            // Шаг 2.3: Сохраняем фото в альбом стены группы
+            const savePhotoRes = await axios.get(`https://api.vk.com/method/photos.saveWallPhoto`, {
+              params: {
+                group_id: VK_OWNER_ID,
+                photo: uploadRes.data.photo,
+                server: uploadRes.data.server,
+                hash: uploadRes.data.hash,
+                access_token: VK_ACCESS_TOKEN,
+                v: "5.131"
+              }
+            });
+
+            const photoInfo = savePhotoRes.data?.response?.[0];
+            if (photoInfo) {
+              const attachmentString = `photo${photoInfo.owner_id}_${photoInfo.id}`;
+              
+              // Шаг 2.4: Публикуем пост с прикрепленным медиафайлом
+              await axios.get(`https://api.vk.com/method/wall.post`, {
+                params: {
+                  owner_id: `-${VK_OWNER_ID}`.replace('--', '-'),
+                  from_group: 1,
+                  message: postText,
+                  attachments: attachmentString,
+                  access_token: VK_ACCESS_TOKEN,
+                  v: "5.131"
+                }
+              });
+              console.log("Успешно отправлено в VK с картинкой!");
+            }
           }
-        });
-        if (vkResponse.data && vkResponse.data.error) {
-          console.log("VK API вернул ошибку:", vkResponse.data.error.error_msg);
         } else {
-          console.log("Успешно отправлено в VK!");
+          // Если картинки нет, шлем чистый текст
+          await axios.get(`https://api.vk.com/method/wall.post`, {
+            params: {
+              owner_id: `-${VK_OWNER_ID}`.replace('--', '-'),
+              from_group: 1,
+              message: postText,
+              access_token: VK_ACCESS_TOKEN,
+              v: "5.131"
+            }
+          });
+          console.log("Успешно отправлено в VK (только текст)!");
         }
       } catch (vkError) {
         console.log("Ошибка в VK (продолжаем работу):", vkError.message);
       }
     }
 
-    // 3. МЕССЕНДЖЕР МАКС (Изолированный блок)
+    // 3. МЕССЕНДЖЕР МАКС
     if (channelsString.includes("max")) {
       try {
         console.log("Отправка в мессенджер МАКС...");
         await axios.post(`https://api.max.ru/bot${MAX_BOT_TOKEN}/sendMessage`, {
           chat_id: MAX_CHAT_ID,
-          text: postText,
-          photo: imageUrl
+          text: postText
         });
         console.log("Успешно отправлено в МАКС!");
       } catch (maxError) {
-        console.log("Ошибка в МАКС (продолжаем работу):", maxError.message);
+        console.log("Ошибка в МАКС (заглушено, идем дальше):", maxError.message);
       }
     }
 
-    // Финал функции: ошибки соцсетей выше перехвачены, поэтому мы СЮДА гарантированно дойдём
+    // Железный финал: отправляем статус успеха обратно в Google Таблицу
     console.log("Отправляем статус закрытия строки в Google Таблицу...");
     const targetId = data.rowIndex || data.id;
     
@@ -116,7 +171,6 @@ async function checkAndPublish() {
 // Запуск раз в минуту
 setInterval(checkAndPublish, 60000);
 
-// Создаем простейший сервер для заглушки порта Render
 const server = http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': 'text/plain' });
   res.end('Proxy Server is running');
