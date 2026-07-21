@@ -15,7 +15,6 @@ const maxBot = new Bot(
 );
 
 const CHAT_ID = Number(process.env.CHAT_ID);
-
 const app = express();
 
 const __filename = fileURLToPath(import.meta.url);
@@ -23,10 +22,7 @@ const __dirname = path.dirname(__filename);
 
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
-        cb(
-            null,
-            path.join(__dirname, "../uploads")
-        );
+        cb(null, path.join(__dirname, "../uploads"));
     },
     filename: (req, file, cb) => {
         const ext = path.extname(file.originalname);
@@ -34,146 +30,79 @@ const storage = multer.diskStorage({
     }
 });
 
-const upload = multer({
-    storage
-});
+const upload = multer({ storage });
 
 app.use(cors());
-app.use(
-    express.json({
-        limit: "50mb"
-    })
-);
-
-app.use(
-    express.static(
-        path.join(__dirname, "../public")
-    )
-);
-
-app.use(
-    "/uploads",
-    express.static(
-        path.join(__dirname, "../uploads")
-    )
-);
-
-let currentPost = {
-    text: "",
-    images: []
-};
-
-app.post(
-    "/api/upload",
-    upload.array("images", 10),
-    (req, res)=>{
-        const files = req.files as Express.Multer.File[];
-        const images = files.map(file=>({
-            url: `/uploads/${file.filename}`
-        }));
-        res.json({
-            success: true,
-            images
-        });
-    }
-);
-
-app.get("/api/post", (req, res)=>{
-    res.json(currentPost);
-});
-
-app.post("/api/post", (req, res)=>{
-    const post = req.body;
-    if(
-        typeof post.text !== "string" ||
-        !Array.isArray(post.images)
-    ){
-        return res.status(400).json({
-            error: "Неверный формат поста"
-        });
-    }
-
-    if(post.images.length > 10){
-        return res.status(400).json({
-            error: "Максимум 10 изображений"
-        });
-    }
-
-    currentPost = {
-        text: post.text,
-        images: post.images
-    };
-
-    res.json({
-        success: true,
-        post: currentPost
-    });
-});
+app.use(express.json({ limit: "50mb" }));
 
 app.post("/publish", async (req, res)=>{
     try {
         const post = req.body;
         const attachments: any[] = [];
 
+        console.log("=== НАЧАЛО ОБРАБОТКИ ПОСТА ===");
+        console.log("Текст:", post.text);
+        console.log("Количество картинок в запросе:", post.images ? post.images.length : 0);
+
         if (post.images && Array.isArray(post.images)) {
-            for (const image of post.images) {
+            for (let i = 0; i < post.images.length; i++) {
+                const image = post.images[i];
                 let uploaded;
 
-                // Проверяем, передана ли картинка в формате Base64 (data:image/...)
-                if (image.data && image.data.startsWith("data:image")) {
-                    console.log("Обработка Base64 изображения...");
-                    const matches = image.data.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
-                    if (matches && matches.length === 3) {
-                        const buffer = Buffer.from(matches[2], 'base64');
+                try {
+                    if (image.data && image.data.startsWith("data:image")) {
+                        console.log(`Картинка #${i + 1}: обнаружен Base64, декодируем...`);
+                        const matches = image.data.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+                        if (matches && matches.length === 3) {
+                            const buffer = Buffer.from(matches[2], 'base64');
+                            console.log(`Картинка #${i + 1}: буфер создан, размер ${buffer.length} байт. Вызываем maxBot.api.uploadImage...`);
+                            
+                            uploaded = await maxBot.api.uploadImage({
+                                source: buffer
+                            });
+                            console.log(`Картинка #${i + 1}: успешно загружена! Ответ от MAX API:`, JSON.stringify(uploaded));
+                        } else {
+                            console.log(`Картинка #${i + 1}: ошибка парсинга Base64 регулярным выражением`);
+                        }
+                    } else if (image.url && image.url.startsWith("http")) {
+                        console.log(`Картинка #${i + 1}: загрузка по URL: ${image.url}`);
                         uploaded = await maxBot.api.uploadImage({
-                            source: buffer
+                            url: image.url
                         });
+                        console.log(`Картинка #${i + 1}: успешно загружена по URL!`);
                     }
-                } 
-                // Стандартная обработка по URL
-                else if (image.url && image.url.startsWith("http")) {
-                    uploaded = await maxBot.api.uploadImage({
-                        url: image.url
-                    });
-                } 
-                // Обработка локального файла
-                else if (image.url) {
-                    const filePath = path.join(
-                        __dirname,
-                        "..",
-                        image.url
-                    );
-                    const fileBuffer = fs.readFileSync(filePath);
-                    uploaded = await maxBot.api.uploadImage({
-                        source: fileBuffer
-                    });
-                }
 
-                if (uploaded && uploaded.payload) {
-                    const attachment = {
-                        type: "image",
-                        payload: uploaded.payload
-                    };
-                    attachments.push(attachment);
+                    if (uploaded && uploaded.payload) {
+                        attachments.push({
+                            type: "image",
+                            payload: uploaded.payload
+                        });
+                        console.log(`Картинка #${i + 1}: вложение добавлено в массив attachments`);
+                    } else {
+                        console.log(`Картинка #${i + 1}: ВНИМАНИЕ! Объект uploaded не содержит payload. Содержимое uploaded:`, JSON.stringify(uploaded));
+                    }
+                } catch (imgErr) {
+                    console.error(`КРИТИЧЕСКАЯ ОШИБКА при загрузке картинки #${i + 1}:`, imgErr);
                 }
             }
         }
 
+        console.log(`Всего вложений готово к отправке: ${attachments.length}`);
+
         const result = await maxBot.api.sendMessageToChat(
             CHAT_ID,
             post.text || "",
-            {
-                attachments
-            }
+            { attachments }
         );
 
+        console.log("Сообщение успешно отправлено в чат МАКС!");
         res.json({
             success: true,
             result
         });
     }
     catch(error){
-        console.error("Ошибка публикации:", error);
+        console.error("ОШИБКА НА СЕРВЕРЕ RENDER:", error);
         res.status(500).json({
             success: false,
             error: String(error)
@@ -182,12 +111,13 @@ app.post("/publish", async (req, res)=>{
 });
 
 const PORT = process.env.PORT || 3000;
+app.listen(PORT, ()=>{
+    console.log(`PostHub server started on port ${PORT}`);
+});
+```
+eof
 
-app.listen(
-    PORT,
-    ()=>{
-        console.log(
-            `PostHub server started on port ${PORT}`
-        );
-    }
-);
+### Что нужно сделать:
+1. Замените код в файле **`index.ts`** на GitHub на этот код и сохраните изменения (Render сделает авто-деплой).
+2. Отправьте пост с картинкой из пульта.
+3. Откройте панель управления **Render** -> ваш сервис -> вкладка **Logs** (Логи) и посмотрите, что именно там написалось (появились ли строки вроде `Картинка #1: обнаружен Base64`, размер буфера и что ответил API МАКСа). Скопируйте эти логи и пришлите мне!
