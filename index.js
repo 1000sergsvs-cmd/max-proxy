@@ -10,6 +10,10 @@ dotenv.config();
 const BOT_TOKEN = process.env.BOT_TOKEN || "";
 const CHAT_ID = Number(process.env.CHAT_ID || 0);
 
+if (!BOT_TOKEN || !CHAT_ID) {
+    console.error("❌ КРИТИЧЕСКАЯ ОШИБКА: BOT_TOKEN или CHAT_ID не заданы в переменных окружения Render!");
+}
+
 const maxBot = new Bot(BOT_TOKEN);
 const app = express();
 
@@ -135,8 +139,7 @@ app.post("/publish", async (req, res) => {
     } catch (error) {
         console.error("❌ ОШИБКА НА СЕРВЕРЕ RENDER (/publish):", error);
         res.status(500).json({
-            success: false,
-            error: error.message || String(error)
+            size: error.message || String(error)
         });
     }
 });
