@@ -1,58 +1,93 @@
-var MAX_PROXY_BASE = "https://max-proxy-bdw6.onrender.com";
+const express = require("express");
+const cors = require("cors");
+const dotenv = require("dotenv");
 
-function doGet(e) {
-  return HtmlService.createHtmlOutputFromFile('Index.html')
-    .setTitle('Пульт управления публикациями')
-    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.DEFAULT);
-}
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
+dotenv.config();
 
-function publishPostFromWeb(payload) {
-  try {
-    let results = [];
-    
-    // Если выбран МАКС, отправляем пост (с текстом и картинками) в формате JSON
-    if (payload.targetMAX) {
-      sendToMaxAsJson(payload.postText, payload.images || []);
-      results.push("МАКС: Успешно");
+const BOT_TOKEN = process.env.BOT_TOKEN || "";
+const CHAT_ID = Number(process.env.CHAT_ID || 0);
+
+const app = express();
+app.use(cors());
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ extended: true, limit: "50mb" }));
+
+app.post("/publish", async (req, res) => {
+    try {
+        console.log("=== [POST /publish] ПОЛУЧЕН ЗАПРОС ===");
+        const post = req.body || {};
+        const text = post.text || "";
+        const images = post.images || [];
+
+        console.log("Текст:", text);
+        console.log("Количество картинок:", images.length);
+
+        const attachments = [];
+
+        // Загружаем картинки напрямую через REST API МАКС без падений SDK
+        for (let i = 0; i < images.length; i++) {
+            const img = images[i];
+            if (img.data && typeof img.data === 'string' && img.data.includes(",")) {
+                try {
+                    const base64Data = img.data.split(",")[1];
+                    const buffer = Buffer.from(base64Data, "base64");
+
+                    console.log(`Загрузка картинки #${i + 1} (${buffer.length} байт)...`);
+                    
+                    const uploadRes = await fetch(`https://api.max.ru/v1/bots/${BOT_TOKEN}/images/upload`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/octet-stream" },
+                        body: buffer
+                    });
+
+                    if (uploadRes.ok) {
+                        const uploadJson = await uploadRes.json();
+                        console.log(`Ответ загрузки картинки #${i + 1}:`, uploadJson);
+                        const fileId = uploadJson.file_id || uploadJson.payload || uploadJson.id;
+                        if (fileId) {
+                            attachments.push({ type: "image", payload: fileId });
+                        }
+                    } else {
+                        console.error(`Ошибка загрузки картинки #${i + 1}: HTTP`, uploadRes.status);
+                    }
+                } catch (imgErr) {
+                    console.error(`Ошибка обработки картинки #${i + 1}:`, imgErr.message);
+                }
+            }
+        }
+
+        // Отправляем сообщение в чат
+        console.log("Отправка сообщения в чат МАКС...");
+        const sendPayload = { text: text };
+        if (attachments.length > 0) {
+            sendPayload.attachments = attachments;
+        }
+
+        const sendRes = await fetch(`https://api.max.ru/v1/bots/${BOT_TOKEN}/chats/${CHAT_ID}/messages`, {
+            text: text,
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(sendPayload)
+        });
+
+        const sendJson = await sendRes.json();
+        console.log("Результат отправки в МАКС:", sendJson);
+
+        res.json({
+            success: true,
+            message: "Публикация успешно отправлена в МАКС"
+        });
+    } catch (error) {
+        console.error("КРИТИЧЕСКАЯ ОШИБКА НА СЕРВЕРЕ:", error);
+        res.status(500).json({
+            success: false,
+            error: error.message || String(error)
+        });
     }
-    
-    return {
-      success: true,
-      message: "Успешно опубликовано:\n" + results.join("\n")
-    };
-  } catch (e) {
-    return {
-      success: false,
-      message: "Ошибка публикации: " + e.message
-    };
-  }
-}
+});
 
-function sendToMaxAsJson(text, images) {
-  let url = MAX_PROXY_BASE + "/publish";
-  
-  let data = {
-    text: text || "",
-    images: images || []
-  };
-
-  let options = {
-    method: "post",
-    contentType: "application/json",
-    payload: JSON.stringify(data),
-    muteHttpExceptions: true
-  };
-
-  Logger.log("Отправка в МАКС через JSON (/publish)...");
-  let response = UrlFetchApp.fetch(url, options);
-  let responseCode = response.getResponseCode();
-  let responseText = response.getContentText();
-
-  Logger.log("ОТВЕТ ОТ RENDER -> Код: " + responseCode + ", Текст: " + responseText);
-
-  if (responseCode !== 200) {
-    throw new Error("HTTP " + responseCode + ": " + responseText);
-  }
-
-  return true;
-}
+const PORT = process.env.PORT || 10000;
+app.listen(PORT, () => {
+    console.log(`Server started on port ${PORT}`);
+});
