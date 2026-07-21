@@ -5,7 +5,6 @@ import path from "path";
 import { fileURLToPath } from "url";
 import multer from "multer";
 import { Bot } from "@maxhub/max-bot-api";
-import fs from "fs";
 
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 
@@ -72,14 +71,26 @@ app.post("/publish", async (req, res)=>{
                         console.log(`Картинка #${i + 1}: успешно загружена по URL!`);
                     }
 
-                    if (uploaded && uploaded.payload) {
-                        attachments.push({
-                            type: "image",
-                            payload: uploaded.payload
-                        });
-                        console.log(`Картинка #${i + 1}: вложение добавлено в массив attachments`);
+                    if (uploaded) {
+                        console.log(`Картинка #${i + 1}: объект uploaded получен:`, JSON.stringify(uploaded));
+                        // Некоторые версии API возвращают payload внутри uploaded, другие прямо в корне или в result
+                        const payloadId = uploaded.payload || uploaded.file_id || uploaded.id || (uploaded.result && uploaded.result.payload);
+                        
+                        if (payloadId) {
+                            attachments.push({
+                                type: "image",
+                                payload: payloadId
+                            });
+                            console.log(`Картинка #${i + 1}: вложение успешно добавлено с ID/payload:`, payloadId);
+                        } else {
+                            console.log(`Картинка #${i + 1}: ВНИМАНИЕ! Не удалось найти идентификатор в объекте uploaded. Добавляем объект целиком как payload.`);
+                            attachments.push({
+                                type: "image",
+                                payload: uploaded
+                            });
+                        }
                     } else {
-                        console.log(`Картинка #${i + 1}: ВНИМАНИЕ! Объект uploaded не содержит payload. Содержимое uploaded:`, JSON.stringify(uploaded));
+                        console.log(`Картинка #${i + 1}: ВНИМАНИЕ! Объект uploaded пустой.`);
                     }
                 } catch (imgErr) {
                     console.error(`КРИТИЧЕСКАЯ ОШИБКА при загрузке картинки #${i + 1}:`, imgErr);
@@ -88,24 +99,26 @@ app.post("/publish", async (req, res)=>{
         }
 
         console.log(`Всего вложений готово к отправке: ${attachments.length}`);
+        console.log("Массив вложений:", JSON.stringify(attachments));
 
         const result = await maxBot.api.sendMessageToChat(
             CHAT_ID,
             post.text || "",
-            { attachments }
+            attachments.length > 0 ? { attachments } : undefined
         );
 
         console.log("Сообщение успешно отправлено в чат МАКС!");
         res.json({
             success: true,
+            message: "Публикация успешно отправлена с " + attachments.length + " вложениями",
             result
         });
     }
     catch(error){
         console.error("ОШИБКА НА СЕРВЕРЕ RENDER:", error);
         res.status(500).json({
-            success: false,
-            error: String(error)
+            success:false,
+            message: "Ошибка сервера: " + String(error)
         });
     }
 });
@@ -114,10 +127,3 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, ()=>{
     console.log(`PostHub server started on port ${PORT}`);
 });
-```
-eof
-
-### Что нужно сделать:
-1. Замените код в файле **`index.ts`** на GitHub на этот код и сохраните изменения (Render сделает авто-деплой).
-2. Отправьте пост с картинкой из пульта.
-3. Откройте панель управления **Render** -> ваш сервис -> вкладка **Logs** (Логи) и посмотрите, что именно там написалось (появились ли строки вроде `Картинка #1: обнаружен Base64`, размер буфера и что ответил API МАКСа). Скопируйте эти логи и пришлите мне!
