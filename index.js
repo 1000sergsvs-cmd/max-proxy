@@ -3,7 +3,6 @@ import cors from "cors";
 import dotenv from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
-import multer from "multer";
 import { Bot } from "@maxhub/max-bot-api";
 
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
@@ -19,22 +18,10 @@ const app = express();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        cb(null, path.join(__dirname, "../uploads"));
-    },
-    filename: (req, file, cb) => {
-        const ext = path.extname(file.originalname);
-        cb(null, Date.now() + ext);
-    }
-});
-
-const upload = multer({ storage });
-
 app.use(cors());
 app.use(express.json({ limit: "50mb" }));
 
-app.post("/publish", async (req, res)=>{
+app.post("/publish", async (req, res) => {
     try {
         const post = req.body;
         const attachments: any[] = [];
@@ -61,36 +48,28 @@ app.post("/publish", async (req, res)=>{
                             });
                             console.log(`Картинка #${i + 1}: успешно загружена! Ответ от MAX API:`, JSON.stringify(uploaded));
                         } else {
-                            console.log(`Картинка #${i + 1}: ошибка парсинга Base64 регулярным выражением`);
+                            console.log(`Картинка #${i + 1}: ошибка парсинга Base64`);
                         }
                     } else if (image.url && image.url.startsWith("http")) {
                         console.log(`Картинка #${i + 1}: загрузка по URL: ${image.url}`);
                         uploaded = await maxBot.api.uploadImage({
                             url: image.url
                         });
-                        console.log(`Картинка #${i + 1}: успешно загружена по URL!`);
                     }
 
                     if (uploaded) {
-                        console.log(`Картинка #${i + 1}: объект uploaded получен:`, JSON.stringify(uploaded));
-                        // Некоторые версии API возвращают payload внутри uploaded, другие прямо в корне или в result
                         const payloadId = uploaded.payload || uploaded.file_id || uploaded.id || (uploaded.result && uploaded.result.payload);
-                        
                         if (payloadId) {
                             attachments.push({
                                 type: "image",
                                 payload: payloadId
                             });
-                            console.log(`Картинка #${i + 1}: вложение успешно добавлено с ID/payload:`, payloadId);
                         } else {
-                            console.log(`Картинка #${i + 1}: ВНИМАНИЕ! Не удалось найти идентификатор в объекте uploaded. Добавляем объект целиком как payload.`);
                             attachments.push({
                                 type: "image",
                                 payload: uploaded
                             });
                         }
-                    } else {
-                        console.log(`Картинка #${i + 1}: ВНИМАНИЕ! Объект uploaded пустой.`);
                     }
                 } catch (imgErr) {
                     console.error(`КРИТИЧЕСКАЯ ОШИБКА при загрузке картинки #${i + 1}:`, imgErr);
@@ -99,7 +78,6 @@ app.post("/publish", async (req, res)=>{
         }
 
         console.log(`Всего вложений готово к отправке: ${attachments.length}`);
-        console.log("Массив вложений:", JSON.stringify(attachments));
 
         const result = await maxBot.api.sendMessageToChat(
             CHAT_ID,
@@ -114,16 +92,16 @@ app.post("/publish", async (req, res)=>{
             result
         });
     }
-    catch(error){
+    catch (error) {
         console.error("ОШИБКА НА СЕРВЕРЕ RENDER:", error);
         res.status(500).json({
-            success:false,
+            success: false,
             message: "Ошибка сервера: " + String(error)
         });
     }
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, ()=>{
+const PORT = process.env.PORT || 10000;
+app.listen(PORT, () => {
     console.log(`PostHub server started on port ${PORT}`);
 });
