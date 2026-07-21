@@ -1,154 +1,58 @@
-const express = require("express");
-const cors = require("cors");
-const dotenv = require("dotenv");
-const multer = require("multer");
-const { Bot, ImageAttachment } = require("@maxhub/max-bot-api");
+var MAX_PROXY_BASE = "https://max-proxy-bdw6.onrender.com";
 
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
-dotenv.config();
-
-const BOT_TOKEN = process.env.BOT_TOKEN || "";
-const CHAT_ID = Number(process.env.CHAT_ID || 0);
-
-if (!BOT_TOKEN || !CHAT_ID) {
-    console.error("❌ КРИТИЧЕСКАЯ ОШИБКА: BOT_TOKEN или CHAT_ID не заданы в переменных окружения Render!");
+function doGet(e) {
+  return HtmlService.createHtmlOutputFromFile('Index.html')
+    .setTitle('Пульт управления публикациями')
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.DEFAULT);
 }
 
-const maxBot = new Bot(BOT_TOKEN);
-const app = express();
-
-app.use(cors());
-app.use(express.json({ limit: "50mb" }));
-app.use(express.urlencoded({ extended: true, limit: "50mb" }));
-
-// Настройка Multer для приема файлов из multipart/form-data в память до 50MB
-const upload = multer({ 
-    storage: multer.memoryStorage(),
-    limits: { fileSize: 50 * 1024 * 1024 } 
-});
-
-async function sendToMax(text, files = [], base64Images = []) {
-    const attachments = [];
-
-    // 1. Обрабатываем файлы из multer (multipart/form-data)
-    if (files && files.length > 0) {
-        for (let i = 0; i < files.length; i++) {
-            const file = files[i];
-            try {
-                console.log(`[Multipart] Картинка #${i + 1} (${file.originalname}): загрузка буфера (${file.buffer.length} байт)...`);
-                const uploadedImage = await maxBot.api.uploadImage({ source: file.buffer });
-                console.log(`[Multipart] Картинка #${i + 1} ответ от MAX ->`, JSON.stringify(uploadedImage));
-
-                if (uploadedImage) {
-                    const fileId = uploadedImage.file_id || 
-                                   uploadedImage.payload || 
-                                   uploadedImage.id || 
-                                   (uploadedImage.result && (uploadedImage.result.file_id || uploadedImage.result.payload));
-
-                    if (fileId) {
-                        const attachment = new ImageAttachment(fileId);
-                        attachments.push(attachment.toJson ? attachment.toJson() : { type: "image", payload: fileId });
-                    } else if (typeof uploadedImage === 'string') {
-                        attachments.push({ type: "image", payload: uploadedImage });
-                    } else {
-                        attachments.push({ type: "image", payload: uploadedImage });
-                    }
-                }
-            } catch (err) {
-                console.error(`❌ Ошибка загрузки multipart картинки #${i + 1}:`, err);
-            }
-        }
+function publishPostFromWeb(payload) {
+  try {
+    let results = [];
+    
+    // Если выбран МАКС, отправляем пост (с текстом и картинками) в формате JSON
+    if (payload.targetMAX) {
+      sendToMaxAsJson(payload.postText, payload.images || []);
+      results.push("МАКС: Успешно");
     }
-
-    // 2. Обрабатываем Base64 картинки (если пришло через JSON)
-    if (base64Images && base64Images.length > 0) {
-        for (let i = 0; i < base64Images.length; i++) {
-            const img = base64Images[i];
-            try {
-                if (img.data && typeof img.data === 'string' && img.data.includes(",")) {
-                    const base64Data = img.data.split(",")[1];
-                    const buffer = Buffer.from(base64Data, "base64");
-
-                    console.log(`[Base64] Картинка #${i + 1}: загрузка буфера (${buffer.length} байт)...`);
-                    const uploadedImage = await maxBot.api.uploadImage({ source: buffer });
-                    console.log(`[Base64] Картинка #${i + 1} ответ от MAX ->`, JSON.stringify(uploadedImage));
-
-                    if (uploadedImage) {
-                        const fileId = uploadedImage.file_id || 
-                                       uploadedImage.payload || 
-                                       uploadedImage.id || 
-                                       (uploadedImage.result && (uploadedImage.result.file_id || uploadedImage.result.payload));
-
-                        if (fileId) {
-                            const attachment = new ImageAttachment(fileId);
-                            attachments.push(attachment.toJson ? attachment.toJson() : { type: "image", payload: fileId });
-                        } else if (typeof uploadedImage === 'string') {
-                            attachments.push({ type: "image", payload: uploadedImage });
-                        }
-                    }
-                }
-            } catch (err) {
-                console.error(`❌ Ошибка загрузки Base64 картинки #${i + 1}:`, err);
-            }
-        }
-    }
-
-    console.log("Итоговый текст поста:", text);
-    console.log("Итоговый массив вложений:", JSON.stringify(attachments));
-
-    const result = await maxBot.api.sendMessageToChat(
-        CHAT_ID,
-        text || "",
-        attachments.length > 0 ? { attachments } : undefined
-    );
-
-    return result;
+    
+    return {
+      success: true,
+      message: "Успешно опубликовано:\n" + results.join("\n")
+    };
+  } catch (e) {
+    return {
+      success: false,
+      message: "Ошибка публикации: " + e.message
+    };
+  }
 }
 
-app.post("/publish-image", upload.array("images"), async (req, res) => {
-    try {
-        console.log("=== [POST /publish-image] ПОЛУЧЕН ЗАПРОС ===");
-        const text = req.body.text || "";
-        const files = req.files || [];
-        
-        await sendToMax(text, files, []);
+function sendToMaxAsJson(text, images) {
+  let url = MAX_PROXY_BASE + "/publish";
+  
+  let data = {
+    text: text || "",
+    images: images || []
+  };
 
-        res.json({
-            success: true,
-            message: "Публикация с картинкой успешно отправлена в МАКС"
-        });
-    } catch (error) {
-        console.error("❌ ОШИБКА НА СЕРВЕРЕ RENDER (/publish-image):", error);
-        res.status(500).json({
-            success: false,
-            error: error.message || String(error)
-        });
-    }
-});
+  let options = {
+    method: "post",
+    contentType: "application/json",
+    payload: JSON.stringify(data),
+    muteHttpExceptions: true
+  };
 
-app.post("/publish", async (req, res) => {
-    try {
-        console.log("=== [POST /publish] ПОЛУЧЕН ЗАПРОС ===");
-        const post = req.body || {};
-        const text = post.text || "";
-        const images = post.images || [];
+  Logger.log("Отправка в МАКС через JSON (/publish)...");
+  let response = UrlFetchApp.fetch(url, options);
+  let responseCode = response.getResponseCode();
+  let responseText = response.getContentText();
 
-        await sendToMax(text, [], images);
+  Logger.log("ОТВЕТ ОТ RENDER -> Код: " + responseCode + ", Текст: " + responseText);
 
-        res.json({
-            success: true,
-            message: "Публикация успешно отправлена в МАКС"
-        });
-    } catch (error) {
-        console.error("❌ ОШИБКА НА СЕРВЕРЕ RENDER (/publish):", error);
-        res.status(500).json({
-            success: false,
-            error: error.message || String(error)
-        });
-    }
-});
+  if (responseCode !== 200) {
+    throw new Error("HTTP " + responseCode + ": " + responseText);
+  }
 
-const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => {
-    console.log(`PostHub server started on port ${PORT}`);
-});
+  return true;
+}
