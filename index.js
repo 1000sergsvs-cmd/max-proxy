@@ -17,36 +17,56 @@ app.use(cors());
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 
+// Маршрут для публикации с картинками через FormData
 app.post("/publish-image", upload.array("images", 10), async (req, res) => {
     try {
         const text = req.body.text || "";
         const files = req.files as Express.Multer.File[] || [];
         const attachments: any[] = [];
 
-        console.log("=== НАЧАЛО ОБРАБОТКИ ФОРМАТА MULTIPART ===");
+        console.log("=== НАЧАЛО ОБРАБОТКИ MULTIPART POST ===");
         console.log("Текст:", text);
-        console.log("Количество файлов:", files.length);
+        console.log("Количество файлов от клиента:", files.length);
 
         for (let i = 0; i < files.length; i++) {
             const file = files[i];
             try {
-                console.log(`Картинка #${i + 1}: загрузка буфера (${file.size} байт) через maxBot.api.uploadImage...`);
+                console.log(`Картинка #${i + 1}: загрузка буфера (${file.size} байт, тип: ${file.mimetype}) через maxBot.api.uploadImage...`);
+                
+                // Передаем буфер в метод загрузки изображений МАКС
                 const uploaded = await maxBot.api.uploadImage({
                     source: file.buffer
                 });
-                console.log(`Картинка #${i + 1}: успешно! Ответ:`, JSON.stringify(uploaded));
+                
+                console.log(`Картинка #${i + 1}: успешно! Ответ от МАКС:`, JSON.stringify(uploaded));
 
                 if (uploaded) {
-                    const payloadId = uploaded.payload || uploaded.file_id || uploaded.id || (uploaded.result && uploaded.result.payload);
-                    attachments.push({
-                        type: "image",
-                        payload: payloadId || uploaded
-                    });
+                    // Извлекаем идентификатор файла из ответа API
+                    const payloadId = uploaded.payload || uploaded.file_id || uploaded.id || (uploaded.result && (uploaded.result.payload || uploaded.result.file_id));
+                    
+                    if (payloadId) {
+                        attachments.push({
+                            type: "image",
+                            payload: payloadId
+                        });
+                    } else if (typeof uploaded === 'string') {
+                        attachments.push({
+                            type: "image",
+                            payload: uploaded
+                        });
+                    } else {
+                        attachments.push({
+                            type: "image",
+                            payload: uploaded
+                        });
+                    }
                 }
             } catch (imgErr) {
-                console.error(`Ошибка при загрузке картинки #${i + 1}:`, imgErr);
+                console.error(`ОШИБКА при загрузке картинки #${i + 1}:`, imgErr);
             }
         }
+
+        console.log("Итоговый массив вложений для отправки:", JSON.stringify(attachments));
 
         const result = await maxBot.api.sendMessageToChat(
             CHAT_ID,
@@ -54,13 +74,14 @@ app.post("/publish-image", upload.array("images", 10), async (req, res) => {
             attachments.length > 0 ? { attachments } : undefined
         );
 
-        console.log("Сообщение с картинками успешно отправлено в чат МАКС!");
+        console.log("Сообщение с картинками успешно отправлено в чат МАКС! Ответ:", JSON.stringify(result));
+        
         res.json({
             success: true,
-            message: "Публикация успешно отправлена"
+            message: "Публикация с картинками успешно отправлена"
         });
     } catch (error) {
-        console.error("ОШИБКА НА СЕРВЕРЕ RENDER:", error);
+        console.error("ОШИБКА НА СЕРВЕРЕ RENDER (/publish-image):", error);
         res.status(500).json({
             success: false,
             error: String(error)
@@ -68,9 +89,11 @@ app.post("/publish-image", upload.array("images", 10), async (req, res) => {
     }
 });
 
+// Маршрут для публикации только текста
 app.post("/publish", async (req, res) => {
     try {
         const post = req.body;
+        console.log("=== ОБРАБОТКА ТЕКСТОВОГО ПОСТА ===");
         const result = await maxBot.api.sendMessageToChat(
             CHAT_ID,
             post.text || ""
@@ -80,7 +103,7 @@ app.post("/publish", async (req, res) => {
             message: "Публикация успешно отправлена"
         });
     } catch (error) {
-        console.error("ОШИБКА НА СЕРВЕРЕ RENDER:", error);
+        console.error("ОШИБКА НА СЕРВЕРЕ RENDER (/publish):", error);
         res.status(500).json({
             success: false,
             error: String(error)
